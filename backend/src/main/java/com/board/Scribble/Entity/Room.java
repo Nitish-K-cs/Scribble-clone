@@ -1,26 +1,21 @@
 package com.board.Scribble.Entity;
 
-import lombok.Setter;
 import lombok.Getter;
+import lombok.Setter;
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
+import jakarta.persistence.*;
 
 @Entity
 @Getter
 @Setter
 public class Room {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Constructors, getters, and setters
-
+    @Column(unique = true)
     private String roomCode;
 
     private String currentWord;
-
 }

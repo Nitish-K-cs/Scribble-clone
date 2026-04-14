@@ -52,7 +52,21 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 roomPlayers
                         .computeIfAbsent(roomCode, k -> new ArrayList<>())
                         .add(username);
+                
+                List<WebSocketSession> sessions = roomSessions
+                            .computeIfAbsent(roomCode, k -> new ArrayList<>());
 
+                    if (!sessions.contains(session)) {
+                        sessions.add(session);
+                    }
+
+                    List<String> players = roomPlayers
+                            .computeIfAbsent(roomCode, k -> new ArrayList<>());
+
+                    if (!players.contains(username)) {
+                        players.add(username);
+                    }
+                
                 System.out.println(username + " joined room: " + roomCode);
 
                 broadcastPlayers(roomCode);
@@ -68,6 +82,31 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 System.out.println("Word set: " + word);
 
                 broadcastWord(roomCode, word);
+            }
+            else if (type.equals("DRAW") || type.equals("DRAW_START") || type.equals("DRAW_END")) {
+
+                List<WebSocketSession> sessions = roomSessions.get(roomCode);
+
+                if (sessions != null) {
+                    for (WebSocketSession s : sessions) {
+                        if (s.isOpen()) {
+                            s.sendMessage(new TextMessage(message.getPayload()));
+                        }
+                    }
+                }
+            }
+
+            else if (type.equals("CLEAR")) {
+                List<WebSocketSession> sessions = roomSessions.get(roomCode);
+
+                if (sessions != null) {
+                    for (WebSocketSession s : sessions) {
+                        if (s.isOpen()) {
+                            // 🔥 forward the same clear message
+                            s.sendMessage(new TextMessage(message.getPayload()));
+                        }
+                    }
+                }
             }
 
         } catch (Exception e) {

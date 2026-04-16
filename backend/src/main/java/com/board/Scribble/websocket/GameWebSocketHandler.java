@@ -16,6 +16,8 @@ import tools.jackson.databind.ObjectMapper;
 @Component
 public class GameWebSocketHandler extends TextWebSocketHandler {
 
+    private final List<String> words = Arrays.asList("dog", "cat", "boat");
+    private final Map<String, String> roomDrawer = new HashMap<>();
     private final Map<String, List<WebSocketSession>> roomSessions = new HashMap<>();
     private final Map<WebSocketSession, String> sessionUsernameMap = new HashMap<>();
     private final Map<String, List<String>> roomPlayers = new HashMap<>();
@@ -30,6 +32,8 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         System.out.println("Client connected: " + session.getId());
     }
 
+    
+
     @Override
     public void handleTextMessage(WebSocketSession session, TextMessage message) {
         try {
@@ -42,34 +46,38 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             if (type.equals("JOIN")) {
 
                 String username = node.get("username").asText();
+                
+                if (roomService.getRoom(roomCode) == null) {
+                    session.sendMessage(new TextMessage("{\"type\":\"ERROR\",\"message\":\"Room not found\"}"));
+                    return;
+                }
 
                 sessionUsernameMap.put(session, username);
 
-                roomSessions
-                        .computeIfAbsent(roomCode, k -> new ArrayList<>())
-                        .add(session);
+                roomSessions.computeIfAbsent(roomCode, k -> new ArrayList<>());
+                roomPlayers.computeIfAbsent(roomCode, k -> new ArrayList<>());
 
-                roomPlayers
-                        .computeIfAbsent(roomCode, k -> new ArrayList<>())
-                        .add(username);
-                
-                List<WebSocketSession> sessions = roomSessions
-                            .computeIfAbsent(roomCode, k -> new ArrayList<>());
+                List<WebSocketSession> sessions = roomSessions.get(roomCode);
+                List<String> players = roomPlayers.get(roomCode);
 
-                    if (!sessions.contains(session)) {
-                        sessions.add(session);
-                    }
+                if (!sessions.contains(session)) {
+                    sessions.add(session);
+                }
 
-                    List<String> players = roomPlayers
-                            .computeIfAbsent(roomCode, k -> new ArrayList<>());
+                if (!players.contains(username)) {
+                    players.add(username);
+                }
 
-                    if (!players.contains(username)) {
-                        players.add(username);
-                    }
-                
+                if (!roomDrawer.containsKey(roomCode)) {
+                    roomDrawer.put(roomCode, username); // first player = host = drawer
+                }
+
                 System.out.println(username + " joined room: " + roomCode);
-
                 broadcastPlayers(roomCode);
+                
+                if (players.size() == 1) {
+                     sendWordToDrawer(roomCode);
+                }           
             }
 
             // ✅ SET WORD
@@ -108,9 +116,44 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                     }
                 }
             }
+            else if (type.equals("BECOME_DRAWER")) {
+                String username = sessionUsernameMap.get(session);
+                roomDrawer.put(roomCode, username);
+                System.out.println(username + " is now drawing");
+                sendWordToDrawer(roomCode);
+            }
 
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+
+    private void sendWordToDrawer(String roomCode) throws Exception 
+    {
+        String word = words.get(new Random().nextInt(words.size()));
+
+        roomService.setWord(roomCode, word);
+
+        List<WebSocketSession> sessions = roomSessions.get(roomCode);
+
+        for (WebSocketSession s : sessions) {
+
+            String user = sessionUsernameMap.get(s);
+
+            Map<String, Object> response = new HashMap<>();
+
+            if (user.equals(roomDrawer.get(roomCode))) {
+                // ✅ Drawer sees actual word
+                response.put("type", "WORD");
+                response.put("word", word);
+            } else {
+                // ❌ Others see blank / hint
+                response.put("type", "WORD");
+                response.put("word", "????");
+            }
+
+            s.sendMessage(new TextMessage(mapper.writeValueAsString(response)));
         }
     }
 

@@ -21,7 +21,7 @@ public class RoomController {
 
     @PostMapping("/create")
     public Room createRoom() {
-        return roomService.createRoom(null);
+        return roomService.createRoom();
     }
 
     @GetMapping("/{code}")

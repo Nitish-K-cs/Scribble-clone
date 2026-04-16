@@ -84,3 +84,18 @@ button:hover {
   gap: 10px;
   justify-content: center;
 }
+
+.room-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #1e1e1e;
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.room-info h3 {
+  color: #00ffcc;
+  margin: 0;
+}

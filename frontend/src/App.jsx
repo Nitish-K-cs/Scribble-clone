@@ -6,6 +6,9 @@ function App() {
   const canvasRef = useRef(null);
   const isDrawing = useRef(false);
 
+  const [scores, setScores] = useState({});
+  const [chat, setChat] = useState([]);
+  const [guess, setGuess] = useState(""); 
   const [connected, setConnected] = useState(false);
   const [username, setUsername] = useState("");
   const [roomCode, setRoomCode] = useState("");
@@ -99,6 +102,19 @@ function App() {
 
       if (data.type === "CLEAR") {
         clearCanvas();
+      }
+
+      if (data.type === "CHAT") {
+        setChat((prev) => [...prev, `${data.username}: ${data.message}`]);
+      }
+
+      if (data.type === "CORRECT_GUESS") {
+        setChat((prev) => [...prev, `🎉 ${data.username} guessed correctly!`]);
+      }
+
+      if (data.type === "SCORES") {
+        console.log("Scores received:", data.scores); // debug
+        setScores(data.scores);
       }
     };
 
@@ -231,6 +247,21 @@ function App() {
     );
   };
 
+  const sendGuess = () => {
+  if (!guess.trim()) return;
+
+  socketRef.current.send(
+    JSON.stringify({
+        type: "CHAT",
+        roomCode,
+        message: guess,
+      })
+    );
+
+    setGuess("");
+  };
+
+
 return (
   <div className="container">
     <h1 className="title">🎨 Scribble Clone</h1>
@@ -271,8 +302,18 @@ return (
               <li key={i}>{p}</li>
             ))}
           </ul>
-        </div>
 
+          <h2>Scoreboard</h2>
+          <ul>
+            {Object.entries(scores)
+              .sort((a, b) => b[1] - a[1]) // 🔥 optional sorting
+              .map(([player, score]) => (
+                <li key={player}>
+                  {player}: {score}
+                </li>
+              ))}
+          </ul>
+        </div>
         {/* CENTER PANEL */}
         <div className="center">
 
@@ -320,6 +361,23 @@ return (
               value={word}
               onChange={(e) => setWord(e.target.value)}
             />
+
+            <div className="chat-box">
+                <div className="messages">
+                  {chat.map((msg, i) => (
+                    <div key={i}>{msg}</div>
+                  ))}
+                </div>
+
+                <div className="chat-input">
+                  <input
+                    placeholder="Type your guess..."
+                    value={guess}
+                    onChange={(e) => setGuess(e.target.value)}
+                  />
+                  <button onClick={sendGuess}>Send</button>
+                </div>
+              </div>
             <button onClick={sendWord}>Send</button>
             <button onClick={clearBoard}>Clear</button>
           </div>

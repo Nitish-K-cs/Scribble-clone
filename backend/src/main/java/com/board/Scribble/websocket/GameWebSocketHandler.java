@@ -21,6 +21,10 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     private final Map<String, List<WebSocketSession>> roomSessions = new HashMap<>();
     private final Map<WebSocketSession, String> sessionUsernameMap = new HashMap<>();
     private final Map<String, List<String>> roomPlayers = new HashMap<>();
+    private final Map<String, List<String>> roomPlayersOrder = new HashMap<>();
+    private final Map<String, Integer> roomTurnIndex = new HashMap<>();
+    private final Map<String, Map<String, Integer>> roomScores = new HashMap<>();
+
 
     @Autowired
     private RoomService roomService;
@@ -52,6 +56,19 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                     return;
                 }
 
+                roomPlayersOrder.computeIfAbsent(roomCode, k -> new ArrayList<>());
+                roomScores.computeIfAbsent(roomCode, k -> new HashMap<>());
+
+                List<String> order = roomPlayersOrder.get(roomCode);
+                Map<String, Integer> scores = roomScores.get(roomCode);
+
+                if (!order.contains(username)) {
+                    order.add(username);
+                }
+
+                scores.putIfAbsent(username, 0);
+
+                roomTurnIndex.putIfAbsent(roomCode, 0);
                 sessionUsernameMap.put(session, username);
 
                 roomSessions.computeIfAbsent(roomCode, k -> new ArrayList<>());
@@ -104,6 +121,62 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 }
             }
 
+            else if (type.equals("CHAT")) {
+
+                String messageText = node.get("message").asText();
+                String username = sessionUsernameMap.get(session);
+
+                // ❌ Prevent drawer from guessing
+                if (username.equals(roomDrawer.get(roomCode))) {
+                    return;
+                }
+
+                String actualWord = roomService.getRoom(roomCode).getCurrentWord();
+
+                Map<String, Object> response = new HashMap<>();
+
+                // 🎯 Correct Guess
+                if (messageText.equalsIgnoreCase(actualWord)) {
+
+                    Map<String, Integer> scores = roomScores.get(roomCode);
+
+                    if (scores == null) {
+                        scores = new HashMap<>();
+                        roomScores.put(roomCode, scores);
+                    }
+
+                    // 🎯 Give points
+                    scores.put(username, scores.getOrDefault(username, 0) + 10);
+
+                    response.put("type", "CORRECT_GUESS");
+                    response.put("username", username);
+
+                    String json = mapper.writeValueAsString(response);
+
+                    for (WebSocketSession s : roomSessions.get(roomCode)) {
+                        if (s.isOpen()) {
+                            s.sendMessage(new TextMessage(json));
+                        }
+                    }
+
+                    // 🔁 Move to next turn
+                    nextTurn(roomCode);
+
+                } else {
+                    response.put("type", "CHAT");
+                    response.put("username", username);
+                    response.put("message", messageText);
+
+                    String json = mapper.writeValueAsString(response);
+
+                    for (WebSocketSession s : roomSessions.get(roomCode)) {
+                        if (s.isOpen()) {
+                            s.sendMessage(new TextMessage(json));
+                        }
+                    }
+                }
+            }
+
             else if (type.equals("CLEAR")) {
                 List<WebSocketSession> sessions = roomSessions.get(roomCode);
 
@@ -125,6 +198,43 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
 
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+
+    private void nextTurn(String roomCode) throws Exception {
+
+        List<String> players = roomPlayersOrder.get(roomCode);
+        if (players == null || players.isEmpty()) return;
+
+        int index = roomTurnIndex.getOrDefault(roomCode, 0);
+        index = (index + 1) % players.size();
+        roomTurnIndex.put(roomCode, index);
+
+        String nextDrawer = players.get(index);
+        roomDrawer.put(roomCode, nextDrawer);
+
+        System.out.println("Next drawer: " + nextDrawer);
+
+        sendWordToDrawer(roomCode);
+        broadcastScores(roomCode);
+    }
+
+
+    private void broadcastScores(String roomCode) throws Exception {
+
+        Map<String, Integer> scores = roomScores.get(roomCode);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("type", "SCORES");
+        response.put("scores", scores);
+
+        String json = mapper.writeValueAsString(response);
+
+        for (WebSocketSession s : roomSessions.get(roomCode)) {
+            if (s.isOpen()) {
+                s.sendMessage(new TextMessage(json));
+            }
         }
     }
 

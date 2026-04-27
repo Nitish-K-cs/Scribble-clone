@@ -8,10 +8,13 @@ import org.springframework.web.socket.*;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import com.board.Scribble.Service.RoomService;
+import com.board.Scribble.Service.UserService;
 
 // ✅ Correct import
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+
+import com.board.Scribble.config.JwtUtil;
 
 @Component
 public class GameWebSocketHandler extends TextWebSocketHandler {
@@ -20,14 +23,20 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     private final Map<String, String> roomDrawer = new HashMap<>();
     private final Map<String, List<WebSocketSession>> roomSessions = new HashMap<>();
     private final Map<WebSocketSession, String> sessionUsernameMap = new HashMap<>();
+    private final Map<WebSocketSession, Boolean> sessionIsRegisteredMap = new HashMap<>();
     private final Map<String, List<String>> roomPlayers = new HashMap<>();
     private final Map<String, List<String>> roomPlayersOrder = new HashMap<>();
     private final Map<String, Integer> roomTurnIndex = new HashMap<>();
     private final Map<String, Map<String, Integer>> roomScores = new HashMap<>();
 
-
     @Autowired
     private RoomService roomService;
+
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private JwtUtil jwtUtil;
 
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -50,6 +59,20 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             if (type.equals("JOIN")) {
 
                 String username = node.get("username").asText();
+                String token = node.has("token") ? node.get("token").asText() : null;
+                
+                // Check if user is registered (has valid token)
+                boolean isRegistered = false;
+                if (token != null && !token.isEmpty()) {
+                    try {
+                        if (jwtUtil.validateToken(token)) {
+                            isRegistered = true;
+                        }
+                    } catch (Exception e) {
+                        // Invalid token, treat as guest
+                        isRegistered = false;
+                    }
+                }
                 
                 if (roomService.getRoom(roomCode) == null) {
                     session.sendMessage(new TextMessage("{\"type\":\"ERROR\",\"message\":\"Room not found\"}"));
@@ -70,6 +93,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
 
                 roomTurnIndex.putIfAbsent(roomCode, 0);
                 sessionUsernameMap.put(session, username);
+                sessionIsRegisteredMap.put(session, isRegistered);
 
                 roomSessions.computeIfAbsent(roomCode, k -> new ArrayList<>());
                 roomPlayers.computeIfAbsent(roomCode, k -> new ArrayList<>());
@@ -147,6 +171,17 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
 
                     // 🎯 Give points
                     scores.put(username, scores.getOrDefault(username, 0) + 10);
+
+                    // Only update database for registered users (not guests)
+                    Boolean isRegistered = sessionIsRegisteredMap.get(session);
+                    if (isRegistered != null && isRegistered) {
+                        try {
+                            userService.updateScore(username, 10);
+                            System.out.println("Updated database score for registered user: " + username);
+                        } catch (Exception e) {
+                            System.err.println("Failed to update user score: " + e.getMessage());
+                        }
+                    }
 
                     response.put("type", "CORRECT_GUESS");
                     response.put("username", username);

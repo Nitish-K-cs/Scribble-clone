@@ -39,6 +39,37 @@ export default function App() {
   const [joined, setJoined] = useState(false);
   const [isDrawer, setIsDrawer] = useState(false);
 
+  // Auth state
+  const [token, setToken] = useState(localStorage.getItem("token") || "");
+  const [showAuth, setShowAuth] = useState(false);
+  const [authMode, setAuthMode] = useState("login");
+  const [authUsername, setAuthUsername] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+
+  // Profile state
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileData, setProfileData] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+
+  // Fetch profile data
+  const fetchProfile = async () => {
+    if (!token) return;
+    setProfileLoading(true);
+    try {
+      const res = await fetch("http://localhost:8080/api/users/profile", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setProfileData(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch profile:", err);
+    }
+    setProfileLoading(false);
+  };
+
   // Toolbar state
   const [activeColor, setActiveColor] = useState("#1a1a1a");
   const [activeSize, setActiveSize] = useState(1); // index into SIZES
@@ -210,14 +241,56 @@ export default function App() {
     const data = await res.json();
     setRoomCode(data.roomCode);
     if (socketRef.current?.readyState !== WebSocket.OPEN) return;
-    socketRef.current.send(JSON.stringify({ type: "JOIN", roomCode: data.roomCode, username }));
+    socketRef.current.send(JSON.stringify({ type: "JOIN", roomCode: data.roomCode, username, token }));
     setJoined(true);
   };
 
   const joinRoom = () => {
     if (!username) return alert("Enter username");
-    socketRef.current.send(JSON.stringify({ type: "JOIN", roomCode, username }));
+    socketRef.current.send(JSON.stringify({ type: "JOIN", roomCode, username, token }));
     setJoined(true);
+  };
+
+  // ── Auth actions ──
+  const handleAuth = async (e) => {
+    e.preventDefault();
+    setAuthError("");
+    
+    const endpoint = authMode === "register" ? "/api/auth/register" : "/api/auth/login";
+    
+    try {
+      const res = await fetch(`http://localhost:8080${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: authUsername, password: authPassword }),
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok) {
+        setToken(data.token);
+        localStorage.setItem("token", data.token);
+        setShowAuth(false);
+        setAuthUsername("");
+        setAuthPassword("");
+      } else {
+        setAuthError(data.error || "Authentication failed");
+      }
+    } catch (err) {
+      setAuthError("Connection error");
+    }
+  };
+
+  const logout = () => {
+    setToken("");
+    localStorage.removeItem("token");
+    setShowProfile(false);
+    setProfileData(null);
+  };
+
+  const openProfile = () => {
+    fetchProfile();
+    setShowProfile(true);
   };
 
   const sendWord = () => {
@@ -249,12 +322,97 @@ export default function App() {
           <h1>Scribble</h1>
         </div>
 
+        {/* Auth Modal */}
+        {showAuth && (
+          <div className="lobby-card" style={{ marginBottom: "20px" }}>
+            <h3>{authMode === "register" ? "Register" : "Login"}</h3>
+            <form onSubmit={handleAuth}>
+              <input
+                placeholder="Username"
+                value={authUsername}
+                onChange={(e) => setAuthUsername(e.target.value)}
+                style={{ marginBottom: "10px" }}
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                style={{ marginBottom: "10px" }}
+              />
+              {authError && <p style={{ color: "red", marginBottom: "10px" }}>{authError}</p>}
+              <button type="submit" className="btn btn-primary">
+                {authMode === "register" ? "Register" : "Login"}
+              </button>
+            </form>
+            <p style={{ marginTop: "10px", fontSize: "0.9rem" }}>
+              {authMode === "register" ? (
+                <>Already have an account? <button onClick={() => setAuthMode("login")}>Login</button></>
+              ) : (
+                <>Need an account? <button onClick={() => setAuthMode("register")}>Register</button></>
+              )}
+            </p>
+            <button onClick={() => setShowAuth(false)} style={{ marginTop: "10px" }}>Close</button>
+          </div>
+        )}
+
+        {/* Profile Modal */}
+        {showProfile && (
+          <div className="lobby-card" style={{ marginBottom: "20px" }}>
+            <h3>👤 Your Profile</h3>
+            {profileLoading ? (
+              <p>Loading...</p>
+            ) : profileData ? (
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: "3rem", marginBottom: "10px" }}>
+                  {getInitials(profileData.username)}
+                </div>
+                <h4 style={{ marginBottom: "15px" }}>{profileData.username}</h4>
+                <div style={{ display: "flex", justifyContent: "center", gap: "30px", marginBottom: "15px" }}>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "1.8rem", fontWeight: "bold", color: "#4dabf7" }}>
+                      {profileData.totalScore}
+                    </div>
+                    <div style={{ fontSize: "0.85rem", color: "#7a6a52" }}>Total Points</div>
+                  </div>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "1.8rem", fontWeight: "bold", color: "#3dba6f" }}>
+                      {profileData.gamesPlayed}
+                    </div>
+                    <div style={{ fontSize: "0.85rem", color: "#7a6a52" }}>Games Played</div>
+                  </div>
+                </div>
+                <button onClick={() => setShowProfile(false)} className="btn btn-secondary">
+                  Close
+                </button>
+              </div>
+            ) : (
+              <p>Could not load profile</p>
+            )}
+          </div>
+        )}
+
         <div className="lobby-card">
           <input
             placeholder="Enter your username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
           />
+          
+          {/* Auth status */}
+          {token ? (
+            <div style={{ marginBottom: "10px", fontSize: "0.85rem", color: "#3dba6f" }}>
+              ✓ Logged in (scores will be saved)
+              <button onClick={logout} style={{ marginLeft: "10px" }}>Logout</button>
+              <button onClick={openProfile} style={{ marginLeft: "10px" }}>👤 Profile</button>
+            </div>
+          ) : (
+            <div style={{ marginBottom: "10px", fontSize: "0.85rem", color: "#868e96" }}>
+              Playing as guest (scores won't be saved)
+              <button onClick={() => setShowAuth(true)} style={{ marginLeft: "10px" }}>Login/Register</button>
+            </div>
+          )}
+          
           <button className="btn btn-primary" onClick={createRoom} disabled={!connected}>
             🎮 Create Room
           </button>

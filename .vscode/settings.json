@@ -12,5 +12,6 @@
             "password": "kannan@123",
             "connectionTimeout": 30
         }
-    ]
+    ],
+    "java.configuration.updateBuildConfiguration": "interactive"
 }
